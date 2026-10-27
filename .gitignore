@@ -118,3 +118,28 @@ dmypy.json
 
 # ignore rlm logs
 rlm/
+
+
+# Local environments
+.venv/
+.venv-*/
+
+# Data and downloaded models
+/data
+/models/
+/checkpoints/
+
+# Experiment outputs
+/outputs/
+/logs/
+/wandb/
+*.log
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Python cache
+__pycache__/
+*.py[cod]

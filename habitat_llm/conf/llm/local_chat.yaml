@@ -1,0 +1,26 @@
+llm:
+  _target_: habitat_llm.llm.local_chat.LocalChat
+  _partial_: True
+
+base_url: ${oc.env:PARTNR_LLM_BASE_URL,http://127.0.0.1:18000/v1}
+request_timeout: 300
+
+system_message: >-
+  You are an expert at task planning.
+  Follow the action format specified in the prompt exactly.
+  Continue the planning transcript with the next planning step only.
+  Do not repeat previous steps or wrap your answer in Markdown code fences.
+
+system_tag: ""
+user_tag: ""
+assistant_tag: ""
+eot_tag: ""
+keep_message_history: False
+verbose: False
+
+generation_params:
+  model: qwen35-27b
+  max_tokens: 1024
+  temperature: 0.0
+  top_p: 1.0
+  stream: False

@@ -1,0 +1,11 @@
+torch==2.7.1
+torchvision==0.22.1
+torchaudio==2.7.1
+numpy==1.26.4
+numba==0.60.0
+llvmlite==0.43.0
+opencv-python==4.10.0.84
+httpx<0.28
+setuptools==69.5.1
+wheel==0.43.0
+cmake==3.27.9
