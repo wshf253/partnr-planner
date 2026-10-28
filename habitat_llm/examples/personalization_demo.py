@@ -24,11 +24,25 @@ from habitat_baselines.config.default_structured_configs import (
     HabitatBaselinesConfigPlugin,
 )
 
+# Import custom action ConfigStore entries before Hydra resolves the defaults.
+# In particular, actions.py registers humanoid_base_velocity at import time.
+from habitat_llm.agent.env import (
+    EnvironmentInterface,
+    register_actions,
+    register_measures,
+    register_sensors,
+    remove_visual_sensors,
+)
+
 register_hydra_plugin(HabitatConfigPlugin)
 register_hydra_plugin(HabitatBaselinesConfigPlugin)
 
 
-@hydra.main(config_path="../conf", config_name="baselines/personalized_takeover")
+@hydra.main(
+    version_base="1.3",
+    config_path="../conf",
+    config_name="baselines/personalized_takeover",
+)
 def main(config):
     # Keep inspection usable before simulator initialization / model loading.
     cfg = config.personalization
@@ -101,13 +115,6 @@ def main(config):
     ):
         raise ValueError("This pilot requires num_proc=1, robot=0, human=1")
 
-    from habitat_llm.agent.env import (
-        EnvironmentInterface,
-        register_actions,
-        register_measures,
-        register_sensors,
-        remove_visual_sensors,
-    )
     from habitat_llm.agent.env.dataset import CollaborationDatasetV0
     from habitat_llm.evaluation.takeover_evaluation_runner import (
         TakeoverEvaluationRunner,
