@@ -43,6 +43,7 @@ from habitat_llm.evaluation.coordination_evaluation_runner import (
     CoordinationEvaluationRunner,
 )
 from habitat_llm.utils import fix_config, setup_config
+from habitat_llm.coordination.search import select_search_candidates
 
 register_hydra_plugin(HabitatConfigPlugin)
 register_hydra_plugin(HabitatBaselinesConfigPlugin)
@@ -181,9 +182,23 @@ def main(config):
     ):
         if int(cfg[key]) <= 0:
             raise ValueError(f"{key} must be positive")
-    support, tests = choose_split(
-        candidates, cfg.support_ids, cfg.test_ids, cfg.support_count, cfg.test_count
-    )
+    search_mode = bool(config.get("search", {}).get("enabled", False))
+    if search_mode:
+        if list(cfg.conditions) != ["no_history"]:
+            raise ValueError(
+                "Search runs no_history only; no support data are collected"
+            )
+        support = []
+        tests = select_search_candidates(
+            candidates, int(config.search.limit), int(config.search.selection_seed)
+        )
+        print(
+            f"Search: {len(candidates)} compatible episodes, {len(tests)} distinct layouts selected"
+        )
+    else:
+        support, tests = choose_split(
+            candidates, cfg.support_ids, cfg.test_ids, cfg.support_count, cfg.test_count
+        )
     fix_config(config)
     config = setup_config(config, int(cfg.seeds[0]))
     full = CollaborationDatasetV0(config.habitat.dataset)
@@ -276,7 +291,9 @@ def main(config):
                         row["error"] = f"{type(exc).__name__}: {exc}"
                         with (out / "results.jsonl").open("a") as stream:
                             stream.write(json.dumps(row) + "\n")
-                        raise
+                        if not search_mode:
+                            raise
+                        continue
                     with (out / "results.jsonl").open("a") as stream:
                         stream.write(json.dumps(row) + "\n")
                     print(json.dumps(row))

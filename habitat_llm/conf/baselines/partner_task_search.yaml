@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - partner_work_allocation
+  - _self_
+coordination:
+  test_ids: null
+  conditions: [no_history]
+  max_sim_steps: 2500
+search:
+  enabled: true
+  limit: 10
+  selection_seed: 42
