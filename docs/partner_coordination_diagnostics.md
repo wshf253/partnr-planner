@@ -119,7 +119,15 @@ index. Use `coordination_demo`, not `planner_demo`, for this config. The launche
 reuses the existing Qwen model/service paths and cleans up its own service.
 The default robot planning threshold is 60 decisions, with 5000 simulator steps
 per trial. ReAct keeps its existing skill-boundary cadence; no mid-skill interruption
-mechanism is introduced.
+mechanism is introduced. At every decision the prompt is rebuilt from the task,
+frozen partner context, current world state and at most six recent action/results
+and three observations; old Thoughts and scene snapshots do not accumulate.
+An explicit vLLM input-context rejection triggers bounded retries dropping older
+current-episode records, while preserving the latest action/result and the entire
+frozen partner context. Other server/model errors are not retried. If essential
+context still cannot fit, the trial fails explicitly. `prompt_budget` in decision
+logs records retained history and retry count. This bounded prompt policy applies
+to all conditions; rerun all conditions when comparing to pre-fix results.
 
 ## Outputs to inspect or share
 

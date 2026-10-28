@@ -135,6 +135,7 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
                 "sim_step": self.step_count,
                 "observation": robot.public_observation,
                 "prompt": robot.last_decision_prompt,
+                "prompt_budget": dict(robot.prompt_budget_info),
                 "thought": info.get("thought", {}).get(0),
                 "action": action,
             }
