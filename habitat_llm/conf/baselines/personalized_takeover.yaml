@@ -1,0 +1,39 @@
+# @package _global_
+defaults:
+  - /examples/planner_multi_agent_demo_config
+  - override /evaluation: decentralized_evaluation_runner_multi_agent
+  - override /planner@evaluation.agents.agent_0.planner: takeover_skill_planner
+  - override /planner@evaluation.agents.agent_1.planner: takeover_skill_planner
+  - override /agent@evaluation.agents.agent_0.config: oracle_rearrange_agent_motortoolsonly
+  - override /agent@evaluation.agents.agent_1.config: oracle_rearrange_agent_motortoolsonly
+  - _self_
+
+# This first diagnostic tests preference adaptation, not partial perception.
+world_model:
+  partial_obs: false
+agent_asymmetry: true
+num_proc: 1
+num_runs_per_episode: 1
+evaluation:
+  save_video: false
+  log_detailed_traces: false
+
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/val_mini.json.gz
+
+personalization:
+  # null selects the first compatible two-object placement episode.
+  episode_id: null
+  inspect_only: false
+  days: 5
+  pause_steps: 120
+  conditions: [no_memory, learned_memory, oracle_profile]
+  users:
+    - {id: user_01, profile: accept_help}
+    - {id: user_02, profile: keep_ownership}
+  # Optional simulator handle of the object that the human moves first.
+  first_object_handle: null
+  seed: 47668090
+  llm_name: local_chat
+  max_tokens: 256

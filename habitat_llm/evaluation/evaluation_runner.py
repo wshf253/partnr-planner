@@ -548,6 +548,9 @@ class EvaluationRunner:
                             f"Agent {agent_id} has a null response on {ah.action}"
                         )
 
+    def on_environment_step(self, info: Dict[str, Any]) -> None:
+        """Optional experiment hook, called only after a real simulator step."""
+
     def run_instruction(
         self, instruction: Optional[str] = None, output_name: str = ""
     ) -> Dict[str, Any]:
@@ -606,6 +609,7 @@ class EvaluationRunner:
             # Execute low level actions
             if len(low_level_actions) > 0:
                 obs, reward, done, info = self.env_interface.step(low_level_actions)
+                self.on_environment_step(info)
                 # Refresh observations
                 observations = self.env_interface.parse_observations(obs)
                 if self.evaluation_runner_config.save_video:

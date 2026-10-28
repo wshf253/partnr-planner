@@ -195,3 +195,9 @@ If you use our codebase or dataset in your research, please cite the [PARTNR](ht
 ## License
 
 partnr-planner is MIT licensed. See the [LICENSE](LICENSE) for details.
+
+## Personalized takeover pilot
+
+See [the implementation and cluster run instructions](docs/personalized_takeover.md)
+for a controlled two-user ACT/WAIT preference-adaptation experiment using existing
+PARTNR motor skills, isolated feedback memory, and no-memory/oracle comparisons.

@@ -88,6 +88,14 @@ print("Local LLM response:", answer)
 assert answer.strip(), "Empty response"
 PY
 
+# Opt-in controlled personalization experiment, sharing this server lifecycle.
+if [[ "${PARTNR_EXPERIMENT:-baseline}" == "personalized_takeover" ]]; then
+    "$REPO/.venv/bin/python" -m habitat_llm.examples.personalization_demo \
+        hydra.run.dir="$RUN_DIR/personalization" "$@" \
+        2>&1 | tee "$RUN_DIR/partnr.log"
+    exit 0
+fi
+
 # No arguments: run the first dataset episode.
 # Pass ++episode_indices=null to run the full dataset.
 if [[ "$#" -eq 0 ]]; then
