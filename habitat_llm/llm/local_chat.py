@@ -1,8 +1,34 @@
+import base64
 import json
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
 from habitat_llm.llm.base_llm import BaseLLM
+
+
+def image_content(prompt, images=None):
+    """Attach local PNG/JPEG files (or encoded bytes), in supplied time order."""
+    if not isinstance(prompt, str):
+        raise TypeError("prompt must be text")
+    if images is None:
+        return prompt
+    if not isinstance(images, (list, tuple)) or not images:
+        raise ValueError("images must be a nonempty list of PNG/JPEG paths or bytes")
+    content = [{"type": "text", "text": prompt}]
+    for item in images:
+        if not isinstance(item, (str, Path, bytes)):
+            raise TypeError("Each image must be a local path or encoded bytes")
+        data = item if isinstance(item, bytes) else Path(item).read_bytes()
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            mime = "image/png"
+        elif data.startswith(b"\xff\xd8\xff"):
+            mime = "image/jpeg"
+        else:
+            raise ValueError("Expected PNG or JPEG encoded image")
+        url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+        content.append({"type": "image_url", "image_url": {"url": url}})
+    return content
 
 
 class LocalChat(BaseLLM):
@@ -14,10 +40,9 @@ class LocalChat(BaseLLM):
         self.http = build_opener(ProxyHandler({}))
 
     def generate(
-        self, prompt, stop=None, max_length=None, generation_args=None
+        self, prompt, stop=None, max_length=None, generation_args=None, images=None
     ):
-        if not isinstance(prompt, str):
-            raise TypeError("This backend currently accepts text prompts only.")
+        content = image_content(prompt, images)
         if generation_args:
             raise ValueError(
                 "Grammar-constrained generation is not implemented. "
@@ -32,7 +57,7 @@ class LocalChat(BaseLLM):
                     "role": "system",
                     "content": str(self.llm_conf.system_message),
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": content},
             ],
             "temperature": float(params.temperature),
             "top_p": float(params.top_p),

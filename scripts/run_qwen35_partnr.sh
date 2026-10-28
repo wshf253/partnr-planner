@@ -40,13 +40,18 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+VISION_ARGS=(--language-model-only)
+if [[ "${PARTNR_MULTIMODAL:-0}" == "1" ]]; then
+    VISION_ARGS=()
+fi
+
 "$SERVE_ENV/bin/vllm" serve "$MODEL" \
     --served-model-name qwen35-27b \
     --host 127.0.0.1 \
     --port "$PORT" \
     --dtype bfloat16 \
     --tensor-parallel-size 1 \
-    --language-model-only \
+    "${VISION_ARGS[@]}" \
     --reasoning-parser qwen3 \
     --max-model-len 16384 \
     --max-num-seqs 1 \
@@ -87,6 +92,17 @@ answer = llm.generate("Reply with exactly: READY", max_length=64)
 print("Local LLM response:", answer)
 assert answer.strip(), "Empty response"
 PY
+
+# Standalone real-image transport check; does not run the coordination planner.
+if [[ -n "${PARTNR_IMAGE_TEST:-}" ]]; then
+    if [[ "${PARTNR_MULTIMODAL:-0}" != "1" ]]; then
+        echo "PARTNR_IMAGE_TEST requires PARTNR_MULTIMODAL=1" >&2
+        exit 1
+    fi
+    "$REPO/.venv/bin/python" -m habitat_llm.examples.local_image_demo \
+        "$PARTNR_IMAGE_TEST" "$@" 2>&1 | tee "$RUN_DIR/image_test.log"
+    exit 0
+fi
 
 # Opt-in controlled personalization experiment, sharing this server lifecycle.
 if [[ "${PARTNR_EXPERIMENT:-baseline}" == "personalized_takeover" ]]; then
