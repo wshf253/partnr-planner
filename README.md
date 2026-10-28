@@ -201,3 +201,9 @@ partnr-planner is MIT licensed. See the [LICENSE](LICENSE) for details.
 See [the implementation and cluster run instructions](docs/personalized_takeover.md)
 for a controlled two-user ACT/WAIT preference-adaptation experiment using existing
 PARTNR motor skills, isolated feedback memory, and no-memory/oracle comparisons.
+
+## Partner-dependent coordination diagnostics
+
+See [partner coordination diagnostics](docs/partner_coordination_diagnostics.md)
+for a fixed ReAct robot paired with different scripted collaboration styles,
+disjoint support/test layouts, and no-history/history/oracle-style comparisons.

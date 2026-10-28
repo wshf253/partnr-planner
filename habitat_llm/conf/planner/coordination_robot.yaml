@@ -1,0 +1,8 @@
+defaults:
+  - llm_zero_shot_react_planner
+  - override /llm@plan_config.llm: local_chat
+  - _self_
+_target_: habitat_llm.planner.coordination_robot_planner.CoordinationRobotPlanner
+plan_config:
+  constrained_generation: false
+  replanning_threshold: 60

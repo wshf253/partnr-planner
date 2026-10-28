@@ -1,0 +1,40 @@
+# @package _global_
+defaults:
+  - /examples/planner_multi_agent_demo_config
+  - override /evaluation: decentralized_evaluation_runner_multi_agent
+  - override /planner@evaluation.agents.agent_0.planner: coordination_robot
+  - override /planner@evaluation.agents.agent_1.planner: profiled_partner
+  - override /agent@evaluation.agents.agent_0.config: oracle_rearrange_agent_motortoolsonly
+  - override /agent@evaluation.agents.agent_1.config: oracle_rearrange_agent_motortoolsonly
+  - _self_
+world_model:
+  partial_obs: false
+agent_asymmetry: true
+num_proc: 1
+evaluation:
+  save_video: false
+  log_detailed_traces: false
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/val_mini.json.gz
+coordination:
+  inspect_only: false
+  support_ids: null
+  test_ids: null
+  support_count: 1
+  test_count: 1
+  min_objects: 4
+  min_groups: 2
+  conditions: [no_history, history, oracle_style]
+  partners:
+    - {id: partner_01, profile: batch}
+    - {id: partner_02, profile: nearest}
+    - {id: partner_03, profile: yielding}
+  seeds: [47668090]
+  max_sim_steps: 5000
+  human_poll_steps: 30
+  yield_radius: 2.0
+  observation_interval: 120
+  max_history_chars: 18000
+  # Avoid reaching the 16k serving context because ReAct appends turns.
+  max_prompt_chars: 45000
