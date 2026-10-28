@@ -107,14 +107,14 @@ fi
 # Opt-in controlled personalization experiment, sharing this server lifecycle.
 if [[ "${PARTNR_EXPERIMENT:-baseline}" == "personalized_takeover" ]]; then
     "$REPO/.venv/bin/python" -m habitat_llm.examples.personalization_demo \
-        hydra.run.dir="$RUN_DIR/personalization" "$@" \
+        "$@" hydra.run.dir="$RUN_DIR/personalization" \
         2>&1 | tee "$RUN_DIR/partnr.log"
     exit 0
 fi
 
 if [[ "${PARTNR_EXPERIMENT:-baseline}" == "partner_coordination" ]]; then
     "$REPO/.venv/bin/python" -m habitat_llm.examples.coordination_demo \
-        hydra.run.dir="$RUN_DIR/coordination" "$@" \
+        "$@" hydra.run.dir="$RUN_DIR/coordination" \
         2>&1 | tee "$RUN_DIR/partnr.log"
     exit 0
 fi
