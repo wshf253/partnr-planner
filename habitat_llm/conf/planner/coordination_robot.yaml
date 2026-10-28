@@ -6,3 +6,7 @@ _target_: habitat_llm.planner.coordination_robot_planner.CoordinationRobotPlanne
 plan_config:
   constrained_generation: false
   replanning_threshold: 60
+  instruct:
+    actions_parser:
+      _target_: habitat_llm.coordination.action_parser.coordination_action_parser
+      _partial_: true

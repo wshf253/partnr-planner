@@ -42,7 +42,10 @@ def public_observation(scene, step):
         "robot_position": scene["robot_position"],
         "human_position": scene["human_position"],
         "objects": {
-            name: {k: v for k, v in state.items() if k != "at_goal"}
+            name: {
+                **{k: v for k, v in state.items() if k != "at_goal"},
+                "held_by_role": {0: "self", 1: "partner", None: None}[state["held_by"]],
+            }
             for name, state in scene["objects"].items()
         },
     }

@@ -33,8 +33,17 @@ class CoordinationRobotPlanner(ZeroShotReactPlanner):
 
     def prepare_prompt(self, input_instruction, world_graph, **kwargs):
         instruction = (
-            input_instruction
-            + "\n\nPartner information:\n"
+            input_instruction + "\n\nIdentity and observation conventions:\n"
+            "You are the robot, agent 0 (self). The human-shaped agent is your "
+            "partner, agent 1. In ALL observations, including previous collaborations, "
+            "held_by=0 means YOU hold the object; held_by=1 means YOUR PARTNER "
+            "holds it; null means neither agent holds it. held_by_role states the "
+            "same identity explicitly. robot_position is your position; human_position "
+            "is your partner's position. recent_robot_action_results contains YOUR "
+            "executed actions, not your partner's. current_observation is the latest "
+            "state; recent_observed_changes contains earlier states labeled by "
+            "sim_step. Do not attribute your own placements to your partner.\n"
+            + "\nPartner information:\n"
             + self.partner_context
             + "\nCoordinate to complete the shared task efficiently. "
             "You can work on different unfinished objects."
@@ -93,7 +102,7 @@ class CoordinationRobotPlanner(ZeroShotReactPlanner):
                 base
                 + "\nLatest observable scene (not a partner plan):\n"
                 + json.dumps(context, separators=(",", ":"))
-                + "\nChoose the next action using the required Thought/action/Assigned! format.\n"
+                + "\nReturn Thought: followed by your reasoning, then one bare tool call such as Pick[toy_food_0] on its own line, then Assigned! on its own line. Do not prefix the tool call with Action:.\n"
             )
             self.last_decision_prompt = self.curr_prompt
             self.prompt_budget_info = {

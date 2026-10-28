@@ -200,3 +200,27 @@ the cluster environment.
 python -m unittest discover -s tests -v
 bash -n scripts/run_coordination_partnr.sh scripts/run_qwen35_partnr.sh
 ```
+
+
+### Pilot interface correction
+
+The coordination-only action parser accepts `Action: Pick[...]` as `Pick[...]`
+(and the same label for other bare tool calls). It preserves skill names and
+arguments, delegates to the existing parser, and leaves raw LLM output in the
+trace for audit. It does not infer actions from the Thought or repair ambiguous
+multi-call lines. Unknown tools remain unknown.
+
+Public observations retain numeric `held_by` for compatibility and additionally
+include `held_by_role`: `self`, `partner`, or null. Every robot prompt explicitly
+maps robot/agent 0 to self and human/agent 1 to partner, including support history,
+and distinguishes current observations, earlier observations, and the robot's
+own executed actions. No partner intent or private scheduling state is exposed.
+
+Rerun support and all three test conditions after this change: the previous
+pilot's format errors changed trajectories, so its timing is not directly
+comparable. Keep the same output budget (2048) used for that pilot:
+
+```bash
+bash scripts/run_coordination_partnr.sh \
+  evaluation.agents.agent_0.planner.plan_config.llm.generation_params.max_tokens=2048
+```
