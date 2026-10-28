@@ -1,6 +1,7 @@
 """Runner lifecycle tests with fake low-level execution, no GPU required."""
 
 import importlib.util
+import json
 import sys
 import tempfile
 import types
@@ -89,6 +90,29 @@ class RunnerTests(unittest.TestCase):
                 [Goal("cup", "table")], "nearest", "frozen", cfg, Path(tmp) / "trial"
             )
         return module, runner
+
+    def test_private_choice_audit_written_once_without_history_leak(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _, runner = self.setup_runner(tmp)
+            runner.planner[1].last_choice_audit = {
+                "sim_step": 0,
+                "style_choice_diverges": True,
+                "choices": {"batch": "a", "nearest": "b"},
+            }
+            runner.get_low_level_actions("task", {}, {})
+            runner.get_low_level_actions("task", {}, {})
+            self.assertEqual(runner.metrics["partner_style_divergence_points"], 1)
+            self.assertEqual(
+                len(
+                    (runner.trial_dir / "partner_choices.jsonl")
+                    .read_text()
+                    .splitlines()
+                ),
+                1,
+            )
+            trace, _ = runner.finish_trial("task", "1", {})
+            self.assertNotIn("choices", json.dumps(trace))
+            self.assertEqual(runner.planner[0].partner_context, "frozen")
 
     def test_robot_done_does_not_terminate_team(self):
         with tempfile.TemporaryDirectory() as tmp:

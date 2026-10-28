@@ -221,3 +221,38 @@ def frozen_context(condition, support_traces, profile=None, max_chars=18000):
         "Infer useful behavior patterns; old object IDs do not identify current objects.\n"
         + body
     )
+
+
+def partner_choice_audit(goals, scene, group, blocked=()):
+    """Evaluator-only one-step alternatives, NOT optimal actions or rollouts.
+
+    Both policies start with the actual partner's last selected destination.
+    Fresh instances ensure probing never mutates the running partner policy.
+    """
+    choices = {}
+    for profile in ("batch", "nearest"):
+        probe = PartnerPolicy(profile)
+        probe.group = group
+        goal = probe.select(goals, scene, blocked)
+        choices[profile] = goal.__dict__.copy() if goal else None
+    return {
+        "previous_selected_destination": group,
+        "blocked_objects": sorted(blocked),
+        "choices": choices,
+        "style_choice_diverges": choices["batch"] != choices["nearest"],
+        "candidate_distances": {
+            goal.object: {
+                "target": goal.target,
+                "partner_distance": distance(
+                    scene["human_position"], scene["objects"][goal.object]["position"]
+                ),
+                "robot_distance": distance(
+                    scene["robot_position"], scene["objects"][goal.object]["position"]
+                ),
+            }
+            for goal in goals
+            if not scene["objects"][goal.object]["at_goal"]
+            and scene["objects"][goal.object]["held_by"] != 0
+            and goal.object not in blocked
+        },
+    }

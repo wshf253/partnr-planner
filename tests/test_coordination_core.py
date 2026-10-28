@@ -7,6 +7,7 @@ import unittest
 from habitat_llm.coordination.core import (
     Goal,
     PartnerPolicy,
+    partner_choice_audit,
     choose_split,
     extract_goals,
     frozen_context,
@@ -51,6 +52,32 @@ GOALS = [Goal("a", "table"), Goal("b", "table"), Goal("c", "shelf"), Goal("d", "
 
 
 class PartnerTests(unittest.TestCase):
+    def test_choice_audit_tracks_divergence_without_mutation(self):
+        state = scene()
+        state["objects"]["a"]["at_goal"] = True
+        before = copy.deepcopy(state)
+        audit = partner_choice_audit(GOALS, state, "table")
+        self.assertEqual(audit["choices"]["batch"]["object"], "b")
+        self.assertEqual(audit["choices"]["nearest"]["object"], "c")
+        self.assertTrue(audit["style_choice_diverges"])
+        self.assertEqual(state, before)
+        # A cooldown/robot-held object cannot create a fake opportunity.
+        state["objects"]["b"]["held_by"] = 0
+        audit = partner_choice_audit(GOALS, state, "table", blocked=["c"])
+        self.assertFalse(audit["style_choice_diverges"])
+        self.assertEqual(set(audit["candidate_distances"]), {"d"})
+
+    def test_choice_audit_does_not_invent_preference_at_start_or_end(self):
+        state = scene()
+        self.assertFalse(
+            partner_choice_audit(GOALS, state, None)["style_choice_diverges"]
+        )
+        for item in state["objects"].values():
+            item["at_goal"] = True
+        audit = partner_choice_audit(GOALS, state, "table")
+        self.assertEqual(audit["choices"], {"batch": None, "nearest": None})
+        self.assertFalse(audit["style_choice_diverges"])
+
     def test_batch_and_nearest_diverge_after_first_placement(self):
         state = scene()
         batch, nearest = PartnerPolicy("batch"), PartnerPolicy("nearest")

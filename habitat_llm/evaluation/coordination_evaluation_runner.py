@@ -44,6 +44,8 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
             "robot_attempts_already_at_goal": 0,
             "robot_skill_failures": 0,
             "robot_decisions": 0,
+            "partner_choice_points": 0,
+            "partner_style_divergence_points": 0,
             "robot_finished_before_team": False,
         }
         self._previous_robot_decision_count = 0
@@ -113,6 +115,16 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
         actions, info, _ = super().get_low_level_actions(
             instruction, observations, world_graph
         )
+        # Private evaluator diagnostics never enter public_trace or partner history.
+        audit = getattr(human, "last_choice_audit", None)
+        if audit is not None:
+            self.metrics["partner_choice_points"] += 1
+            self.metrics["partner_style_divergence_points"] += int(
+                audit["style_choice_diverges"]
+            )
+            with (self.trial_dir / "partner_choices.jsonl").open("a") as stream:
+                stream.write(json.dumps(audit) + "\n")
+            human.last_choice_audit = None
         # Robot Done means it stops contributing, not that the team task is done.
         if robot.is_done:
             self.metrics["robot_finished_before_team"] = True

@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - partner_coordination
+  - _self_
+evaluation:
+  agents:
+    agent_0:
+      planner:
+        plan_config:
+          llm:
+            generation_params:
+              max_tokens: 2048
+coordination:
+  # Reserve test first; select support from a different physical layout.
+  test_ids: ['99']
+  support_ids: null
+  support_count: 1
+  test_count: 1
+  conditions: [no_history, history]
+  partners:
+    - {id: partner_01, profile: batch}
+    - {id: partner_02, profile: nearest}

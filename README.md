@@ -207,3 +207,5 @@ PARTNR motor skills, isolated feedback memory, and no-memory/oracle comparisons.
 See [partner coordination diagnostics](docs/partner_coordination_diagnostics.md)
 for a fixed ReAct robot paired with different scripted collaboration styles,
 disjoint support/test layouts, and no-history/history/oracle-style comparisons.
+
+Work-allocation data pilot (episode 99, batch/nearest, no-history/history): [instructions](docs/work_allocation_pilot.md).

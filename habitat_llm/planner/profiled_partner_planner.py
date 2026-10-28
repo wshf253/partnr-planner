@@ -1,6 +1,7 @@
 """Scripted partner selects goals from observable geometry at skill boundaries."""
 
-from habitat_llm.coordination.core import PartnerPolicy
+from habitat_llm.coordination.core import PartnerPolicy, partner_choice_audit
+from habitat_llm.coordination.observations import public_observation
 from habitat_llm.planner.takeover_skill_planner import TakeoverSkillPlanner
 
 
@@ -18,8 +19,10 @@ class ProfiledPartnerPlanner(TakeoverSkillPlanner):
         self.blocked_until = {}
         self.wait_started = 0
         self.skill_failures = 0
+        self.last_choice_audit = None
 
     def get_next_action(self, instruction, observations, world_graph):
+        self.last_choice_audit = None
         if self.active is not None and self.active[0] == "Wait":
             if self.sim_step - self.wait_started >= self.poll_steps:
                 self.agents[0].reset()
@@ -30,7 +33,17 @@ class ProfiledPartnerPlanner(TakeoverSkillPlanner):
                 for obj, until in self.blocked_until.items()
                 if until > self.sim_step
             ]
+            audit = partner_choice_audit(
+                self.goals, self.scene, self.policy.group, blocked
+            )
             goal = self.policy.select(self.goals, self.scene, blocked)
+            self.last_choice_audit = {
+                "sim_step": self.sim_step,
+                "profile": self.profile,
+                "selected_goal": goal.__dict__.copy() if goal else None,
+                "observation": public_observation(self.scene, self.sim_step),
+                **audit,
+            }
             self.action = (
                 ("Rearrange", f"{goal.object}, on, {goal.target}, None, None", None)
                 if goal is not None

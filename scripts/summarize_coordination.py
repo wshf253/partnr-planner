@@ -34,6 +34,9 @@ def summarize(rows):
             "robot_distance",
             "human_distance",
             "robot_skill_failures",
+            "human_skill_failures",
+            "partner_choice_points",
+            "partner_style_divergence_points",
         ):
             values = [row[metric] for row in valid if metric in row]
             item["mean_" + metric] = mean(values) if values else None
@@ -77,6 +80,30 @@ def summarize(rows):
             )
     return {
         "groups": summaries,
+        "style_evidence_checks": [
+            {
+                "phase": row["phase"],
+                "partner_id": row["partner_id"],
+                "episode_id": row["episode_id"],
+                "condition": row["condition"],
+                "seed": row["seed"],
+                "divergence_points": row.get("partner_style_divergence_points"),
+                "status": (
+                    "execution_error"
+                    if "error" in row
+                    else (
+                        "not_instrumented"
+                        if "partner_style_divergence_points" not in row
+                        else (
+                            "no_style_distinguishing_choice_observed"
+                            if row["partner_style_divergence_points"] == 0
+                            else "inspect_partner_choices_and_public_history"
+                        )
+                    )
+                ),
+            }
+            for row in rows
+        ],
         "paired_comparisons": comparisons,
         "note": "Overlap/idle counts are review signals, not ground-truth coordination errors. Compare steps only for paired successful trials.",
     }
