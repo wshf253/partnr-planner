@@ -35,6 +35,15 @@ class ContinualTests(unittest.TestCase):
         self.assertTrue(all('SUPPORT' in p and 'PROBE' not in p for p in prompts))
         self.assertIn('memory2', calls[11][1])
         self.assertIn('memory1', calls[12][1])
+        def mismatched(*args, **kwargs):
+            raise RuntimeError('Initial observation mismatch before first action')
+        with tempfile.TemporaryDirectory() as tmp, patch('builtins.print'):
+            with self.assertRaisesRegex(RuntimeError, 'Initial observation mismatch'):
+                m.run_sequence(runner, None, [{'episode_id':'SUPPORT'}], [{'episode_id':'PROBE'}], config, Path(tmp), mismatched)
+            rows = (Path(tmp) / 'results.jsonl').read_text().splitlines()
+            self.assertEqual(len(rows), 1)
+            self.assertIn('Initial observation mismatch', json.loads(rows[0])['error'])
+
 
     def test_memory_budget_compresses_without_truncation(self):
         core = types.ModuleType('habitat_llm.coordination.core')

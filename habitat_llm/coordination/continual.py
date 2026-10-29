@@ -14,7 +14,10 @@ def update_memory(llm, previous, trace, directory, max_chars,
         'Agent 0 is the robot (self); agent 1 is the partner. Do not attribute self actions '
         'to the partner. Separate observations from hypotheses. Include behavioral tendencies, '
         'evidence, uncertainty, counterexamples, and planning implications. Consider situational '
-        'constraints before revising a trait. Do not memorize object IDs or prescribe exact task '
+        'constraints before revising a trait. Empty hands do NOT imply waiting or inactivity. '
+        'Observed displacement proves movement, not its intention. Stationary intervals may '
+        'include manipulation or obstacles; do not infer laziness, energy, or switching latency '
+        'without evidence. Do not memorize object IDs or prescribe exact task '
         'solutions. No hidden partner labels are available. '
         f'Return plain text under {summary_target_chars} characters.\n'
         'Previous memory:\n' + previous + '\nNew observed collaboration:\n' + evidence
@@ -84,6 +87,9 @@ def run_sequence(runner, env, support, tests, config, out, run_trial):
                             row['paired_initial_state_matches'] = initial == row['initial_observation_sha256']
                         except Exception as exc:
                             row['error'] = f'{type(exc).__name__}: {exc}'
+                            with (out / 'results.jsonl').open('a') as f:
+                                f.write(json.dumps(row) + '\n')
+                            raise
                         with (out / 'results.jsonl').open('a') as f:
                             f.write(json.dumps(row) + '\n')
                         print(json.dumps(row), flush=True)

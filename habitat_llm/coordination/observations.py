@@ -38,6 +38,8 @@ def snapshot(env, goals, previous_robot_position=None):
 
 def public_observation(scene, step):
     return {
+        **({"observed_partner_motion": dict(scene["observed_partner_motion"])}
+           if "observed_partner_motion" in scene else {}),
         "sim_step": step,
         "robot_position": scene["robot_position"],
         "human_position": scene["human_position"],

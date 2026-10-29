@@ -44,3 +44,18 @@ raise distinct errors. Override continual.memory_max_chars,
 continual.summary_target_chars, continual.memory_max_tokens, and
 continual.summary_retries via Hydra. These character limits do not replace the
 model context-token limit. Existing runs are not resumed by this script.
+
+Fairness update: each continual rollout creates a fresh simulator/task/planner and
+an independent episode copy with seeds set before construction. Before any action,
+the initial public observation and both agent base transforms (rounded to 6 decimals)
+are checked against the first rollout for that episode/seed, across days, partners,
+and conditions. Mismatch or rollout error aborts the sequence and saves diagnostics;
+no mismatched comparison is accepted. This checks observed state and agent poses,
+not bitwise equality of all physics internals. Simulator construction adds overhead;
+compare sim_steps, not initialization wall time.
+
+Public observations now include cumulative partner travel and empty-handed moving
+steps (>0.005 displacement per step). These are measured from observed positions,
+not private partner action labels or intentions. The memory prompt explicitly warns
+that empty hands do not imply idleness and stationarity does not identify a trait.
+Re-run all conditions together: old and new observation formats are not comparable.

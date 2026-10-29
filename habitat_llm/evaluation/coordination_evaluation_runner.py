@@ -29,6 +29,7 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
         )
         self.step_count = 0
         self.scene = snapshot(self.env_interface, goals)
+        self.scene["observed_partner_motion"] = {"cumulative_distance": 0.0, "empty_handed_moving_steps": 0}
         self.initial_observation = public_observation(self.scene, 0)
         self.observed = [self.initial_observation]
         self.last_info = {}
@@ -69,6 +70,12 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
         self.metrics["human_distance"] += distance(
             previous["human_position"], self.scene["human_position"]
         )
+        displacement = distance(previous["human_position"], self.scene["human_position"])
+        motion = dict(previous["observed_partner_motion"])
+        motion["cumulative_distance"] = round(self.metrics["human_distance"], 4)
+        empty_handed = not any(obj["held_by"] == 1 for obj in previous["objects"].values())
+        motion["empty_handed_moving_steps"] += int(empty_handed and displacement > 0.005)
+        self.scene["observed_partner_motion"] = motion
         robot_action = self.last_actions.get(0)
         human_action = self.last_actions.get(1)
         robot_object, human_object = action_object(robot_action), action_object(

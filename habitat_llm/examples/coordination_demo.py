@@ -68,7 +68,7 @@ def read_candidates(config):
 
 
 def run_trial(
-    runner, env, raw, profile, context, cfg, seed, directory, branch_choice=None
+    runner, env, raw, profile, context, cfg, seed, directory, branch_choice=None, initial_states=None
 ):
     random.seed(seed)
     np.random.seed(seed)
@@ -92,6 +92,18 @@ def run_trial(
         + ". Either agent may perform any placement. Coordinate efficiently."
     )
     runner.configure_trial(goals, profile, context, cfg, directory)
+    if initial_states is not None:
+        key = (str(raw["episode_id"]), int(seed))
+        actual = {"observation": runner.initial_observation,
+                  "agent_base_transforms": [
+                      np.asarray(env.sim.agents_mgr[uid].articulated_agent.base_transformation).round(6).tolist()
+                      for uid in (0, 1)]}
+        expected = initial_states.setdefault(key, actual)
+        (Path(directory) / "initial_state_check.json").write_text(
+            json.dumps({"matches": actual == expected, "expected": expected, "actual": actual}, indent=2)
+        )
+        if actual != expected:
+            raise RuntimeError("Initial observation mismatch before first action; comparison aborted")
     if branch_choice is not None:
         runner.planner[0].configure_branch(branch_choice, directory)
     # Preserve enough unfinished work for the hypothesized coordination conflict.
@@ -258,17 +270,45 @@ def main(config):
             indent=2,
         )
     )
+    if config.get("continual", {}).get("enabled", False):
+        if search_mode or branch_mode:
+            raise ValueError("Continual mode cannot use search or forced branches")
+        import copy
+        from habitat_llm.coordination.continual import run_sequence
+
+        initial_states = {}
+        def isolated_trial(_runner, _env, raw, profile, context, trial_cfg, seed, directory):
+            # A new simulator, task, episode object, and planner for EVERY rollout.
+            # Seeding an already-used simulator does not clear episode/reset caches.
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            trial_config = copy.deepcopy(config)
+            trial_dataset = CollaborationDatasetV0(
+                trial_config.habitat.dataset,
+                episodes=copy.deepcopy([ep for ep in dataset.episodes
+                                        if str(ep.episode_id) == str(raw["episode_id"])]),
+            )
+            fresh = EnvironmentInterface(trial_config, dataset=trial_dataset, init_wg=False)
+            try:
+                fresh.initialize_perception_and_world_graph()
+                trial_runner = CoordinationEvaluationRunner(trial_config.evaluation, fresh)
+                result = run_trial(trial_runner, fresh, raw, profile, context, trial_cfg,
+                                   seed, directory, initial_states=initial_states)
+                # The HTTP LLM client has no simulator dependency; expose only for memory updates.
+                client.planner = {0: SimpleNamespace(llm=trial_runner.planner[0].llm)}
+                return result
+            finally:
+                fresh.env.close()
+
+        from types import SimpleNamespace
+        client = SimpleNamespace(planner={})
+        run_sequence(client, None, support, tests, config, out, isolated_trial)
+        return
     env = EnvironmentInterface(config, dataset=dataset, init_wg=False)
     try:
         env.initialize_perception_and_world_graph()
         runner = CoordinationEvaluationRunner(config.evaluation, env)
-        if config.get("continual", {}).get("enabled", False):
-            if search_mode or branch_mode:
-                raise ValueError("Continual mode cannot use search or forced branches")
-            from habitat_llm.coordination.continual import run_sequence
-
-            run_sequence(runner, env, support, tests, config, out, run_trial)
-            return
         for seed in cfg.seeds:
             for partner in cfg.partners:
                 support_traces = []
