@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - partner_work_allocation
+  - _self_
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/train.json.gz
+coordination:
+  test_ids: ['24318']
+  support_ids: ['3']
+  conditions: [no_history]
+continual:
+  enabled: true
+  rounds: 3

@@ -62,7 +62,7 @@ class AllocationBranchPlanner(CoordinationRobotPlanner):
             "branch_observation_sha256": None,
             "script_results": [],
         }
-        self._save_branch()
+        # Do not overwrite a finished audit when the runner resets after a trial.
 
     def _save_branch(self):
         self.report_path.write_text(json.dumps(self.branch_report, indent=2))

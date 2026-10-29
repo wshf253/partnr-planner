@@ -262,6 +262,13 @@ def main(config):
     try:
         env.initialize_perception_and_world_graph()
         runner = CoordinationEvaluationRunner(config.evaluation, env)
+        if config.get("continual", {}).get("enabled", False):
+            if search_mode or branch_mode:
+                raise ValueError("Continual mode cannot use search or forced branches")
+            from habitat_llm.coordination.continual import run_sequence
+
+            run_sequence(runner, env, support, tests, config, out, run_trial)
+            return
         for seed in cfg.seeds:
             for partner in cfg.partners:
                 support_traces = []
