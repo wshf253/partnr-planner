@@ -145,6 +145,7 @@ class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
                 self.metrics["robot_attempts_already_at_goal"] += int(obj["at_goal"])
             record = {
                 "sim_step": self.step_count,
+                "decision_source": getattr(robot, "decision_source", "llm"),
                 "observation": robot.public_observation,
                 "prompt": robot.last_decision_prompt,
                 "prompt_budget": dict(robot.prompt_budget_info),

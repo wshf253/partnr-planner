@@ -67,7 +67,9 @@ def read_candidates(config):
     return valid
 
 
-def run_trial(runner, env, raw, profile, context, cfg, seed, directory):
+def run_trial(
+    runner, env, raw, profile, context, cfg, seed, directory, branch_choice=None
+):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -90,6 +92,8 @@ def run_trial(runner, env, raw, profile, context, cfg, seed, directory):
         + ". Either agent may perform any placement. Coordinate efficiently."
     )
     runner.configure_trial(goals, profile, context, cfg, directory)
+    if branch_choice is not None:
+        runner.planner[0].configure_branch(branch_choice, directory)
     # Preserve enough unfinished work for the hypothesized coordination conflict.
     pending = [g for g in goals if not runner.scene["objects"][g.object]["at_goal"]]
     groups = Counter(g.target for g in pending)
@@ -122,6 +126,19 @@ def run_trial(runner, env, raw, profile, context, cfg, seed, directory):
     result["initial_observation_sha256"] = hashlib.sha256(
         json.dumps(trace["initial_observation"], sort_keys=True).encode()
     ).hexdigest()
+    if branch_choice is not None:
+        report = runner.planner[0].branch_report
+        result.update(
+            {
+                key: report[key]
+                for key in (
+                    "prefix_success",
+                    "branch_completed",
+                    "branch_failed",
+                    "branch_observation_sha256",
+                )
+            }
+        )
     return trace, result
 
 
@@ -183,7 +200,17 @@ def main(config):
         if int(cfg[key]) <= 0:
             raise ValueError(f"{key} must be positive")
     search_mode = bool(config.get("search", {}).get("enabled", False))
-    if search_mode:
+    branch_mode = bool(config.get("branch_experiment", {}).get("enabled", False))
+    if branch_mode:
+        if search_mode or list(cfg.conditions) != ["no_history"]:
+            raise ValueError(
+                "Branch validation requires no_history and search disabled"
+            )
+        tests = [ep for ep in candidates if str(ep["episode_id"]) == "24318"]
+        if len(tests) != 1:
+            raise ValueError("Episode 24318 must exist in the selected dataset")
+        support = []
+    elif search_mode:
         if list(cfg.conditions) != ["no_history"]:
             raise ValueError(
                 "Search runs no_history only; no support data are collected"
@@ -242,7 +269,9 @@ def main(config):
                 plans += [
                     ("test", condition, ep)
                     for ep in tests
-                    for condition in cfg.conditions
+                    for condition in (
+                        ["plate", "cup"] if branch_mode else cfg.conditions
+                    )
                 ]
                 frozen = None
                 initial_hashes = {}
@@ -251,7 +280,7 @@ def main(config):
                         # Serialize once: test trials can neither append nor alter support.
                         frozen = json.loads(json.dumps(support_traces))
                     context = frozen_context(
-                        condition,
+                        "no_history" if branch_mode else condition,
                         frozen or [],
                         partner.profile,
                         int(cfg.max_history_chars),
@@ -275,6 +304,7 @@ def main(config):
                             cfg,
                             int(seed),
                             out / name,
+                            branch_choice=condition if branch_mode else None,
                         )
                         row.update(metrics)
                         if phase == "support":
@@ -291,7 +321,7 @@ def main(config):
                         row["error"] = f"{type(exc).__name__}: {exc}"
                         with (out / "results.jsonl").open("a") as stream:
                             stream.write(json.dumps(row) + "\n")
-                        if not search_mode:
+                        if not (search_mode or branch_mode):
                             raise
                         continue
                     with (out / "results.jsonl").open("a") as stream:

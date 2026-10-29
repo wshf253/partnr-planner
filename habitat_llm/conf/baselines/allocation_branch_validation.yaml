@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - partner_work_allocation
+  - _self_
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/train.json.gz
+evaluation:
+  agents:
+    agent_0:
+      planner:
+        _target_: habitat_llm.planner.allocation_branch_planner.AllocationBranchPlanner
+coordination:
+  conditions: [no_history]
+  test_ids: ['24318']
+  max_sim_steps: 5000
+branch_experiment:
+  enabled: true
