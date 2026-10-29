@@ -66,6 +66,20 @@ def setup(choice, directory):
 
 
 class BranchTests(unittest.TestCase):
+    def test_configure_then_run_instruction_reset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = setup("plate", tmp)
+            p.reset()  # EvaluationRunner.run_instruction resets after configure.
+            self.assertIn("Navigate[table_18]", p.replan("task", {}, {0: "world"})["llm_response"])
+            p._add_responses_to_prompt({0: "Successful execution!"})
+            p.reset()
+            self.assertEqual(p.script_index, 0)
+            self.assertEqual(p.branch_report["script_results"], [])
+            p.configure_branch("cup", tmp)
+            p.reset()
+            self.assertEqual(p.branch_report["choice"], "cup")
+            self.assertEqual(p.script[4], ("Navigate", "table_32"))
+
     def test_same_prefix_different_allocation_then_llm(self):
         with tempfile.TemporaryDirectory() as tmp:
             runs = []

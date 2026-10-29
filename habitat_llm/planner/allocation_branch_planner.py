@@ -36,12 +36,21 @@ class AllocationBranchPlanner(CoordinationRobotPlanner):
         self.script_pending = False
         self.script_released = False
         self.decision_source = "llm"
+        # run_instruction resets planners after the trial has been configured.
+        # Keep configuration, but restart all execution/audit state.
+        config = getattr(self, "_branch_config", None)
+        if config is not None:
+            self.configure_branch(*config)
 
     def configure_branch(self, choice, directory):
         from pathlib import Path
 
         if choice not in BRANCHES:
             raise ValueError("Branch choice must be plate or cup")
+        self._branch_config = (choice, directory)
+        self.script_index = 0
+        self.script_pending = False
+        self.script_released = False
         self.script = PREFIX + BRANCHES[choice]
         self.report_path = Path(directory) / "branch_audit.json"
         self.branch_report = {
