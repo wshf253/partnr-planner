@@ -35,3 +35,25 @@ class ContinualTests(unittest.TestCase):
         self.assertTrue(all('SUPPORT' in p and 'PROBE' not in p for p in prompts))
         self.assertIn('memory2', calls[11][1])
         self.assertIn('memory1', calls[12][1])
+
+    def test_memory_budget_compresses_without_truncation(self):
+        core = types.ModuleType('habitat_llm.coordination.core')
+        core.frozen_context = lambda *a, **kw: 'public evidence'
+        spec = importlib.util.spec_from_file_location('habitat_llm.coordination.continual', ROOT / 'habitat_llm/coordination/continual.py')
+        m = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'habitat_llm.coordination.core': core}):
+            spec.loader.exec_module(m)
+        with tempfile.TemporaryDirectory() as tmp, patch('builtins.print'):
+            directory = Path(tmp)
+            answers = iter(['x' * 6001, 'Supported tendency; uncertain.'])
+            llm = types.SimpleNamespace(generate=lambda *a, **kw: next(answers))
+            result = m.update_memory(llm, '', {}, directory, 18000)
+            self.assertEqual(result, 'Supported tendency; uncertain.')
+            self.assertEqual(len((directory / 'memory_update_raw.txt').read_text()), 6001)
+            self.assertEqual(json.loads((directory / 'memory_budget.json').read_text())['summary_attempts'], 1)
+            llm.generate = lambda *a, **kw: 'x' * 6001
+            with self.assertRaisesRegex(ValueError, '6001 characters, limit 6000, after 2'):
+                m.update_memory(llm, '', {}, directory, 18000)
+            llm.generate = lambda *a, **kw: '   '
+            with self.assertRaisesRegex(ValueError, 'empty text'):
+                m.update_memory(llm, '', {}, directory, 18000)

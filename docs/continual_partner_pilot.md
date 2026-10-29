@@ -35,3 +35,12 @@ memory. No measured improvement is guaranteed. Keep negative outcomes.
 RQ2 comes later: distinguish transient constraints from persistent strategy changes,
 with observations that allow the distinction across time. Do not infer it from this
 stable-partner experiment.
+
+Memory budgets: default maximum 6000 characters, generation target 4000 characters,
+and output budget 2048 tokens. Oversized memories are re-summarized up to twice;
+text is never silently sliced. Raw generations, summary prompts/outputs, and
+memory_budget.json preserve the audit trail. Exhausted retries and empty outputs
+raise distinct errors. Override continual.memory_max_chars,
+continual.summary_target_chars, continual.memory_max_tokens, and
+continual.summary_retries via Hydra. These character limits do not replace the
+model context-token limit. Existing runs are not resumed by this script.

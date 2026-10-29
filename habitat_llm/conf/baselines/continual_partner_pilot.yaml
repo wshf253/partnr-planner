@@ -12,3 +12,7 @@ coordination:
 continual:
   enabled: true
   rounds: 3
+  memory_max_chars: 6000
+  summary_target_chars: 4000
+  memory_max_tokens: 2048
+  summary_retries: 2
