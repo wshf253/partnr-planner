@@ -23,8 +23,21 @@ PROFILE_DESCRIPTIONS = {
         "visibly approaching it. They wait if every available object is avoided. "
         "They do not interrupt a manipulation already in progress."
     ),
+    "preferred_destination": (
+        "This partner first completes every unfinished placement onto its preferred "
+        "destination(s), nearest object first by straight-line distance, and only "
+        "then works on the remaining placements nearest first. They skip objects "
+        "already carried by the robot."
+    ),
 }
 CONDITIONS = ("no_history", "history", "oracle_style")
+
+
+def describe_profile(profile, preferred_targets=()):
+    description = PROFILE_DESCRIPTIONS[profile]
+    if profile == "preferred_destination":
+        description += " Preferred destination(s): " + ", ".join(preferred_targets) + "."
+    return description
 
 
 def distance(a, b):
@@ -133,11 +146,16 @@ def choose_split(candidates, support_ids, test_ids, support_count, test_count):
 
 
 class PartnerPolicy:
-    def __init__(self, profile, yield_radius=2.0):
+    def __init__(self, profile, yield_radius=2.0, preferred_targets=()):
         if profile not in PROFILE_DESCRIPTIONS:
             raise ValueError(f"Unknown partner profile: {profile}")
+        if (profile == "preferred_destination") != bool(preferred_targets):
+            raise ValueError(
+                "preferred_targets is required for, and only for, preferred_destination"
+            )
         self.profile = profile
         self.yield_radius = yield_radius
+        self.preferred_targets = tuple(preferred_targets)
         self.group = None
         self.yield_count = 0
 
@@ -171,6 +189,10 @@ class PartnerPolicy:
             same_group = [g for g in pending if g.target == self.group]
             if same_group:
                 pending = same_group
+        if self.profile == "preferred_destination":
+            preferred = [g for g in pending if g.target in self.preferred_targets]
+            if preferred:
+                pending = preferred
         selected = min(
             pending,
             key=lambda g: (
@@ -182,11 +204,13 @@ class PartnerPolicy:
         return selected
 
 
-def frozen_context(condition, support_traces, profile=None, max_chars=18000):
+def frozen_context(
+    condition, support_traces, profile=None, max_chars=18000, preferred_targets=()
+):
     if condition == "no_history":
         return "You have no previous experience with this partner."
     if condition == "oracle_style":
-        return "Known partner behavior: " + PROFILE_DESCRIPTIONS[profile]
+        return "Known partner behavior: " + describe_profile(profile, preferred_targets)
     if condition != "history" or not support_traces:
         raise ValueError("History condition needs prior observed interactions")
     # Only these public fields cross the evaluator -> robot boundary.
@@ -256,3 +280,32 @@ def partner_choice_audit(goals, scene, group, blocked=()):
             and goal.object not in blocked
         },
     }
+
+
+def allocation_choice(goals, observation, allocated_targets, blocked=()):
+    """Scripted robot rule for forced allocations, from the PUBLIC observation only.
+
+    Unfinished placements onto the allocated destination(s) come first, then the
+    rest; nearest to the robot within each phase. Objects the partner holds are
+    skipped; the partner's intended next object is unknown to this rule.
+    """
+    objects, robot = observation["objects"], observation["robot_position"]
+    pending = [
+        g
+        for g in goals
+        if objects[g.object]["held_by"] != 1
+        and not (
+            objects[g.object]["held_by"] is None
+            and objects[g.object]["location"] == g.target
+        )
+        and g.object not in blocked
+    ]
+    allocated = [g for g in pending if g.target in allocated_targets]
+    phase = "allocation" if allocated else "fallback"
+    pending = allocated or pending
+    if not pending:
+        return None, "wait"
+    goal = min(
+        pending, key=lambda g: (distance(robot, objects[g.object]["position"]), g.object)
+    )
+    return goal, phase

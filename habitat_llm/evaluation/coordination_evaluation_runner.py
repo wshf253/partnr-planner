@@ -18,14 +18,20 @@ def action_object(action):
 
 
 class CoordinationEvaluationRunner(DecentralizedEvaluationRunner):
-    def configure_trial(self, goals, profile, context, cfg, trial_dir):
+    def configure_trial(
+        self, goals, profile, context, cfg, trial_dir, preferred_targets=()
+    ):
         self.goals, self.cfg = goals, cfg
         self.trial_dir = Path(trial_dir)
         self.trial_dir.mkdir(parents=True, exist_ok=False)
         self.planner[0].partner_context = context
         self.planner[0].max_prompt_chars = int(cfg.max_prompt_chars)
         self.planner[1].configure(
-            profile, goals, int(cfg.human_poll_steps), float(cfg.yield_radius)
+            profile,
+            goals,
+            int(cfg.human_poll_steps),
+            float(cfg.yield_radius),
+            tuple(preferred_targets),
         )
         self.step_count = 0
         self.scene = snapshot(self.env_interface, goals)

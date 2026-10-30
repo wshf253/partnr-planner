@@ -1,0 +1,34 @@
+# @package _global_
+# Value-of-information gate (확인 1): scripted robot allocations x
+# preferred-destination partners x seeds. No LLM server is needed; launch with
+# scripts/run_allocation_gate_partnr.sh.
+defaults:
+  - partner_work_allocation
+  - _self_
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/train.json.gz
+evaluation:
+  agents:
+    agent_0:
+      planner:
+        _target_: habitat_llm.planner.scripted_allocation_planner.ScriptedAllocationPlanner
+coordination:
+  conditions: [no_history]
+  max_sim_steps: 5000
+  # Three seeds measure simulator variation before any allocation is compared.
+  seeds: [47668090, 47668091, 47668092]
+  # Destination names are episode 24318's goal targets. For a redesigned
+  # balanced episode, override allocation_gate.episode_id and every target list.
+  partners:
+    - {id: prefers_counter, profile: preferred_destination, preferred_targets: [counter_19]}
+    - {id: prefers_cabinet, profile: preferred_destination, preferred_targets: [cabinet_37]}
+allocation_gate:
+  enabled: true
+  episode_id: '24318'
+  # Extra steps the best allocation's slowest seed must beat every other
+  # allocation's fastest seed by.
+  min_margin_steps: 0
+  allocations:
+    - {id: robot_counter, targets: [counter_19]}
+    - {id: robot_cabinet, targets: [cabinet_37]}

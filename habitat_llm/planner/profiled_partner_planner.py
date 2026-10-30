@@ -6,15 +6,24 @@ from habitat_llm.planner.takeover_skill_planner import TakeoverSkillPlanner
 
 
 class ProfiledPartnerPlanner(TakeoverSkillPlanner):
-    def configure(self, profile, goals, poll_steps, yield_radius):
+    def configure(self, profile, goals, poll_steps, yield_radius, preferred_targets=()):
+        unknown = set(preferred_targets) - {goal.target for goal in goals}
+        if unknown:
+            raise ValueError(
+                "Preferred destinations are not goal targets in this episode: "
+                + ", ".join(sorted(unknown))
+            )
         self.profile, self.goals = profile, goals
         self.poll_steps, self.yield_radius = poll_steps, yield_radius
+        self.preferred_targets = tuple(preferred_targets)
         self.reset()
 
     def reset(self):
         super().reset()
         self.policy = PartnerPolicy(
-            getattr(self, "profile", "batch"), getattr(self, "yield_radius", 2.0)
+            getattr(self, "profile", "batch"),
+            getattr(self, "yield_radius", 2.0),
+            getattr(self, "preferred_targets", ()),
         )
         self.blocked_until = {}
         self.wait_started = 0

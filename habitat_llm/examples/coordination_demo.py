@@ -68,7 +68,8 @@ def read_candidates(config):
 
 
 def run_trial(
-    runner, env, raw, profile, context, cfg, seed, directory, branch_choice=None, initial_states=None
+    runner, env, raw, profile, context, cfg, seed, directory, branch_choice=None, initial_states=None,
+    preferred_targets=(), allocation=None,
 ):
     random.seed(seed)
     np.random.seed(seed)
@@ -91,7 +92,7 @@ def run_trial(
         + "; ".join(f"put {g.object} on {g.target}" for g in goals)
         + ". Either agent may perform any placement. Coordinate efficiently."
     )
-    runner.configure_trial(goals, profile, context, cfg, directory)
+    runner.configure_trial(goals, profile, context, cfg, directory, preferred_targets)
     if initial_states is not None:
         key = (str(raw["episode_id"]), int(seed))
         actual = {"observation": runner.initial_observation,
@@ -106,6 +107,11 @@ def run_trial(
             raise RuntimeError("Initial observation mismatch before first action; comparison aborted")
     if branch_choice is not None:
         runner.planner[0].configure_branch(branch_choice, directory)
+    if allocation is not None:
+        name, targets = allocation
+        runner.planner[0].configure_allocation(
+            name, tuple(targets), goals, int(cfg.human_poll_steps), directory
+        )
     # Preserve enough unfinished work for the hypothesized coordination conflict.
     pending = [g for g in goals if not runner.scene["objects"][g.object]["at_goal"]]
     groups = Counter(g.target for g in pending)
@@ -138,6 +144,10 @@ def run_trial(
     result["initial_observation_sha256"] = hashlib.sha256(
         json.dumps(trace["initial_observation"], sort_keys=True).encode()
     ).hexdigest()
+    if allocation is not None:
+        report = runner.planner[0].allocation_report
+        result["robot_placed_objects"] = list(report["placed_by_robot"])
+        result["allocated_objects"] = list(report["allocated_objects"])
     if branch_choice is not None:
         report = runner.planner[0].branch_report
         result.update(
@@ -214,7 +224,17 @@ def main(config):
     search_mode = bool(config.get("search", {}).get("enabled", False))
     branch_mode = bool(config.get("branch_experiment", {}).get("enabled", False))
     sweep_mode = bool(config.get("candidate_sweep", {}).get("enabled", False))
-    if sweep_mode:
+    gate_mode = bool(config.get("allocation_gate", {}).get("enabled", False))
+    if gate_mode:
+        if (search_mode or branch_mode or sweep_mode
+                or config.get("continual", {}).get("enabled", False)):
+            raise ValueError("Allocation gate cannot be combined with other modes")
+        from habitat_llm.coordination.allocation_gate import validate_gate
+        from habitat_llm.coordination.candidate_sweep import select_candidates
+        validate_gate(config.allocation_gate, cfg.partners)
+        support = []
+        tests = select_candidates(candidates, [config.allocation_gate.episode_id])
+    elif sweep_mode:
         if search_mode or branch_mode or config.get("continual", {}).get("enabled", False):
             raise ValueError("Candidate sweep cannot be combined with other modes")
         from habitat_llm.coordination.candidate_sweep import select_candidates
@@ -277,14 +297,15 @@ def main(config):
             indent=2,
         )
     )
-    if sweep_mode or config.get("continual", {}).get("enabled", False):
+    if gate_mode or sweep_mode or config.get("continual", {}).get("enabled", False):
         if search_mode or branch_mode:
             raise ValueError("Continual mode cannot use search or forced branches")
         import copy
         from habitat_llm.coordination.continual import run_sequence
 
         initial_states = {}
-        def isolated_trial(_runner, _env, raw, profile, context, trial_cfg, seed, directory):
+        def isolated_trial(_runner, _env, raw, profile, context, trial_cfg, seed, directory,
+                           **trial_kwargs):
             # A new simulator, task, episode object, and planner for EVERY rollout.
             # Seeding an already-used simulator does not clear episode/reset caches.
             random.seed(seed)
@@ -301,16 +322,21 @@ def main(config):
                 fresh.initialize_perception_and_world_graph()
                 trial_runner = CoordinationEvaluationRunner(trial_config.evaluation, fresh)
                 result = run_trial(trial_runner, fresh, raw, profile, context, trial_cfg,
-                                   seed, directory, initial_states=initial_states)
+                                   seed, directory, initial_states=initial_states,
+                                   **trial_kwargs)
                 # The HTTP LLM client has no simulator dependency; expose only for memory updates.
-                client.planner = {0: SimpleNamespace(llm=trial_runner.planner[0].llm)}
+                # The scripted allocation robot has no LLM.
+                client.planner = {0: SimpleNamespace(llm=getattr(trial_runner.planner[0], "llm", None))}
                 return result
             finally:
                 fresh.env.close()
 
         from types import SimpleNamespace
         client = SimpleNamespace(planner={})
-        if sweep_mode:
+        if gate_mode:
+            from habitat_llm.coordination.allocation_gate import run_gate
+            run_gate(client, tests[0], config, out, isolated_trial)
+        elif sweep_mode:
             from habitat_llm.coordination.candidate_sweep import run_sweep
             run_sweep(client, tests, config, out, isolated_trial)
         else:
