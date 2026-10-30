@@ -1,0 +1,7 @@
+# @package _global_
+defaults:
+  - partner_candidate_sweep
+  - _self_
+candidate_sweep:
+  episode_ids: ['8958']
+  conditions: [no_history, oracle_style, opposite_style]

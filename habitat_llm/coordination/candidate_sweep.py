@@ -3,6 +3,17 @@ import json
 from .core import frozen_context
 
 
+def rule_context(condition, actual_profile):
+    if condition == 'opposite_style':
+        if actual_profile not in ('batch', 'nearest'):
+            raise ValueError('Opposite rule requires batch or nearest partner')
+        supplied = {'batch': 'nearest', 'nearest': 'batch'}[actual_profile]
+        return frozen_context('oracle_style', [], supplied), supplied
+    if condition not in ('no_history', 'oracle_style'):
+        raise ValueError('Unknown rule diagnostic condition')
+    return frozen_context(condition, [], actual_profile), (actual_profile if condition == 'oracle_style' else None)
+
+
 def select_candidates(candidates, ids):
     requested = [str(x) for x in ids]
     if not requested or len(requested) != len(set(requested)):
@@ -30,6 +41,20 @@ def summarize(rows):
             comparisons.append(dict(profile=profile, comparable_successful_pair=valid,
                                     steps_saved_by_oracle=a['sim_steps'] - b['sim_steps'] if valid else None,
                                     robot_actions_changed=(a.get('robot_actions') != b.get('robot_actions')) if valid else None))
+        rule_comparisons = []
+        for profile in ('batch', 'nearest'):
+            pair = {r['condition']: r for r in trials if r['profile'] == profile}
+            for reference, treatment in [('no_history', 'oracle_style'),
+                                         ('no_history', 'opposite_style'),
+                                         ('opposite_style', 'oracle_style')]:
+                a, b = pair.get(reference, {}), pair.get(treatment, {})
+                valid = all(r.get('initial_state_matches') and not r.get('error') and
+                            r.get('task_state_success') == 1 and r.get('stop_reason') == 'task_success'
+                            for r in (a, b))
+                rule_comparisons.append(dict(profile=profile, reference=reference, treatment=treatment,
+                    comparable_successful_pair=valid,
+                    steps_saved=a['sim_steps'] - b['sim_steps'] if valid else None,
+                    robot_actions_changed=a.get('robot_actions') != b.get('robot_actions') if valid else None))
         baseline = [r for r in trials if r['condition'] == 'no_history']
         observed_difference = None
         if len(baseline) == 2 and all(r.get('initial_state_matches') and not r.get('error') and
@@ -37,7 +62,7 @@ def summarize(rows):
             observed_difference = baseline[0]['public_trace_sha256'] != baseline[1]['public_trace_sha256']
         output.append(dict(episode_id=episode, seed=seed,
                            public_traces_differ=observed_difference,
-                           comparisons=comparisons, trials=trials))
+                           comparisons=comparisons, rule_comparisons=rule_comparisons, trials=trials))
     return {'note': 'Shortlist only. Public trace differences do not prove identifiable traits; '
                     'oracle is not an optimal policy. Inspect action timing and failure logs. '
                     'Truncated/error runs are retained but excluded from success-time comparisons.',
@@ -48,18 +73,26 @@ def run_sweep(runner, tests, config, out, trial):
     import hashlib
     rows = []
     cfg = config.coordination
+    conditions = list(getattr(config.candidate_sweep, 'conditions', ['no_history', 'oracle_style']))
+    if not conditions or len(set(conditions)) != len(conditions):
+        raise ValueError('Need unique nonempty sweep conditions')
+    for condition in conditions:
+        for partner in cfg.partners:
+            rule_context(condition, partner.profile)
     for seed in cfg.seeds:
         for ep in tests:
             for partner in cfg.partners:
-                for condition in ('no_history', 'oracle_style'):
+                for condition in conditions:
                     name = f'sweep_{condition}_{partner.id}_ep{ep["episode_id"]}_seed{seed}'
                     directory = out / name
                     row = dict(episode_id=str(ep['episode_id']), seed=int(seed),
                                partner_id=partner.id, profile=partner.profile,
                                condition=condition, log_directory=str(directory))
+                    context, supplied_profile = rule_context(condition, partner.profile)
+                    row["supplied_profile"] = supplied_profile
                     try:
                         trace, metrics = trial(runner, None, ep, partner.profile,
-                                               frozen_context(condition, [], partner.profile),
+                                               context,
                                                cfg, int(seed), directory)
                         row.update(metrics)
                         row['initial_state_matches'] = json.loads((directory / 'initial_state_check.json').read_text())['matches']
