@@ -213,7 +213,14 @@ def main(config):
             raise ValueError(f"{key} must be positive")
     search_mode = bool(config.get("search", {}).get("enabled", False))
     branch_mode = bool(config.get("branch_experiment", {}).get("enabled", False))
-    if branch_mode:
+    sweep_mode = bool(config.get("candidate_sweep", {}).get("enabled", False))
+    if sweep_mode:
+        if search_mode or branch_mode or config.get("continual", {}).get("enabled", False):
+            raise ValueError("Candidate sweep cannot be combined with other modes")
+        from habitat_llm.coordination.candidate_sweep import select_candidates
+        support = []
+        tests = select_candidates(candidates, config.candidate_sweep.episode_ids)
+    elif branch_mode:
         if search_mode or list(cfg.conditions) != ["no_history"]:
             raise ValueError(
                 "Branch validation requires no_history and search disabled"
@@ -270,7 +277,7 @@ def main(config):
             indent=2,
         )
     )
-    if config.get("continual", {}).get("enabled", False):
+    if sweep_mode or config.get("continual", {}).get("enabled", False):
         if search_mode or branch_mode:
             raise ValueError("Continual mode cannot use search or forced branches")
         import copy
@@ -303,7 +310,11 @@ def main(config):
 
         from types import SimpleNamespace
         client = SimpleNamespace(planner={})
-        run_sequence(client, None, support, tests, config, out, isolated_trial)
+        if sweep_mode:
+            from habitat_llm.coordination.candidate_sweep import run_sweep
+            run_sweep(client, tests, config, out, isolated_trial)
+        else:
+            run_sequence(client, None, support, tests, config, out, isolated_trial)
         return
     env = EnvironmentInterface(config, dataset=dataset, init_wg=False)
     try:

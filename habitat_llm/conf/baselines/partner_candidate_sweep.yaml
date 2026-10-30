@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - partner_work_allocation
+  - _self_
+habitat:
+  dataset:
+    data_path: data/datasets/partnr_episodes/v0_0/train.json.gz
+coordination:
+  conditions: [no_history, oracle_style]
+  max_sim_steps: 5000
+candidate_sweep:
+  enabled: true
+  episode_ids: ['8990', '24318', '3', '8854', '9161', '8958', '24635', '8586', '21204', '21424']
