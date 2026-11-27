@@ -45,6 +45,23 @@ from habitat_llm.evaluation import (
 )
 from habitat_llm.agent.env.dataset import CollaborationDatasetV0
 from habitat_baselines.utils.info_dict import extract_scalars_from_info
+from habitat_llm.examples.run_accounting import (
+    all_statuses,
+    append_episode_row,
+    build_run_info,
+    check_episode_indices,
+    classify_exception,
+    ensure_episode_csv,
+    episode_row,
+    failed_episode_stats,
+    merge_status_runs,
+    status_summary,
+    write_or_check_run_info,
+)
+
+REPO_DIR = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 def get_output_file(config, env_interface):
@@ -126,6 +143,99 @@ def write_config(config):
                     )
 
 
+def _to_container(node):
+    if node is None:
+        return None
+    try:
+        return OmegaConf.to_container(node, resolve=True)
+    except Exception:
+        return OmegaConf.to_container(node, resolve=False)
+
+
+def _planner_configs(config):
+    """Agent name -> plan_config, for centralized and decentralized runs."""
+    if "planner" in config.evaluation:
+        return {"planner": config.evaluation.planner.get("plan_config", None)}
+    return {
+        name: config.evaluation.agents[name].planner.get("plan_config", None)
+        for name in config.evaluation.agents
+    }
+
+
+def _run_episode_ids(config, dataset):
+    """Episode ids this run evaluates, before any resume filtering."""
+    episodes = list(dataset.episodes)
+    if config.get("episode_mod_filter", None) is not None:
+        rem, mod = config.episode_mod_filter
+        episodes = [x for x in episodes if int(x.episode_id) % mod == rem]
+    if config.get("episode_indices", None) is not None:
+        episodes = [episodes[x] for x in config.episode_indices]
+    return [e.episode_id for e in episodes]
+
+
+def record_run_info(config, dataset):
+    """Write run_info.json into hydra.run.dir, or check it on resume."""
+    from hydra.core.hydra_config import HydraConfig
+
+    run_dir = HydraConfig.get().runtime.output_dir
+    agents = {}
+    for name, plan_config in _planner_configs(config).items():
+        if plan_config is None:
+            continue
+        agents[name] = {
+            "llm": _to_container(plan_config.get("llm", None)),
+            "instruct": _to_container(plan_config.get("instruct", None)),
+        }
+    dataset_file = config.habitat.dataset.data_path.split("/")[-1]
+    previous = [
+        os.path.join(config.paths.results_dir, dataset_file, "planner-log"),
+        config.paths.epi_result_file_path,
+    ]
+    info = build_run_info(
+        repo=REPO_DIR,
+        coop_repo=os.environ.get("COOP_REPO"),
+        agents=agents,
+        dataset_path=config.habitat.dataset.data_path,
+        episode_ids=_run_episode_ids(config, dataset),
+        environ=os.environ,
+        extra={"num_runs_per_episode": config.get("num_runs_per_episode", None)},
+    )
+    path = write_or_check_run_info(
+        run_dir,
+        info,
+        resume=bool(config.get("resume", False)),
+        has_previous_results=any(os.path.exists(p) for p in previous),
+        environ=os.environ,
+    )
+    print(f"Run provenance: {path}")
+
+
+def episode_stats(info):
+    stats_keys = {
+        "task_percent_complete",
+        "task_state_success",
+        "sim_step_count",
+        "replanning_count",
+        "runtime",
+    }
+
+    # add replanning counts to stats_keys as scalars if replanning_count is a dict
+    if "replanning_count" in info and isinstance(info["replanning_count"], dict):
+        for agent_id, replan_count in info["replanning_count"].items():
+            stats_keys.add(f"replanning_count_{agent_id}")
+            info[f"replanning_count_{agent_id}"] = replan_count
+
+    return extract_scalars_from_info(info, ignore_keys=info.keys() - stats_keys)
+
+
+def print_metrics(title, metrics):
+    cprint("\n---------------------------------", "blue")
+    cprint(f"{title}:", "blue")
+    for k, v in metrics.items():
+        cprint(f"{k}: {v:.3f}", "blue")
+    cprint("\n---------------------------------", "blue")
+
+
 # Method to load agent planner from the config
 @hydra.main(config_path="../conf")
 def run_eval(config):
@@ -136,9 +246,17 @@ def run_eval(config):
     t0 = time.time()
     # Setup config
     config = setup_config(config, seed)
+    check_episode_indices(config.num_proc, config.get("episode_indices", None))
+    count_failures = config.evaluation.get("count_failures", False)
     dataset = CollaborationDatasetV0(config.habitat.dataset)
 
+    if config.evaluation.get("write_run_info", False):
+        # Before write_config, so a refused resume leaves the folder untouched.
+        record_run_info(config, dataset)
     write_config(config)
+    if count_failures:
+        # Header written once here; worker processes only append rows.
+        ensure_episode_csv(config.paths.epi_result_file_path)
     if config.get("resume", False):
         dataset_file = config.habitat.dataset.data_path.split("/")[-1]
         # stats_dir = os.path.join(config.paths.results_dir, dataset_file, "stats")
@@ -220,8 +338,14 @@ def run_eval(config):
         all_stats_episodes: Dict[str, Dict] = {
             str(i): {} for i in range(config.num_runs_per_episode)
         }
+        status_runs = []
         for conn, proc in proc_infos:
-            stats_episodes = conn.recv()
+            payload = conn.recv()
+            if count_failures:
+                stats_episodes, status_run = payload
+                status_runs.append(status_run)
+            else:
+                stats_episodes = payload
             for run_id, stats_run in stats_episodes.items():
                 all_stats_episodes[str(run_id)].update(stats_run)
             proc.join()
@@ -229,6 +353,10 @@ def run_eval(config):
         all_metrics = aggregate_measures(
             {run_id: aggregate_measures(v) for run_id, v in all_stats_episodes.items()}
         )
+        if count_failures:
+            all_metrics.update(
+                status_summary(all_statuses(merge_status_runs(status_runs)))
+            )
         cprint("\n---------------------------------", "blue")
         cprint("Metrics Across All Runs:", "blue")
         for k, v in all_metrics.items():
@@ -330,6 +458,11 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
         stats_episodes: Dict[str, Dict] = {
             str(i): {} for i in range(config.num_runs_per_episode)
         }
+        # Episode status per run, only filled with evaluation.count_failures.
+        count_failures = config.evaluation.get("count_failures", False)
+        status_episodes: Dict[str, Dict[str, str]] = {
+            str(i): {} for i in range(config.num_runs_per_episode)
+        }
 
         num_episodes = len(env_interface.env.episodes)
         for run_id in range(config.num_runs_per_episode):
@@ -341,54 +474,74 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
                 instruction = env_interface.env.env.env._env.current_episode.instruction
                 print("\n\nEpisode", episode_id)
 
-                try:
-                    info = eval_runner.run_instruction(
-                        output_name=f"episode_{episode_id}_{run_id}"
-                    )
-
-                    info_episode = {
-                        "run_id": run_id,
-                        "episode_id": episode_id,
-                        "instruction": instruction,
-                    }
-                    stats_keys = {
-                        "task_percent_complete",
-                        "task_state_success",
-                        "sim_step_count",
-                        "replanning_count",
-                        "runtime",
-                    }
-
-                    # add replanning counts to stats_keys as scalars if replanning_count is a dict
-                    if "replanning_count" in info and isinstance(
-                        info["replanning_count"], dict
-                    ):
-                        for agent_id, replan_count in info["replanning_count"].items():
-                            stats_keys.add(f"replanning_count_{agent_id}")
-                            info[f"replanning_count_{agent_id}"] = replan_count
-
-                    stats_episode = extract_scalars_from_info(
-                        info, ignore_keys=info.keys() - stats_keys
-                    )
+                if count_failures:
+                    # Failed episodes stay in the results with their cause.
+                    try:
+                        info = eval_runner.run_instruction(
+                            output_name=f"episode_{episode_id}_{run_id}"
+                        )
+                    except Exception as e:
+                        traceback.print_exc()
+                        status, failed_agent = classify_exception(e)
+                        print(
+                            f"Episode {episode_id} failed ({status}); counted with "
+                            "task_percent_complete=0 and task_state_success=0."
+                        )
+                        stats_episode = failed_episode_stats()
+                        if config.evaluation.log_data:
+                            save_exception_message(config, env_interface)
+                    else:
+                        status, failed_agent = "ok", None
+                        stats_episode = episode_stats(info)
+                        print_metrics(
+                            f"Metrics For Run {run_id} Episode {episode_id}",
+                            stats_episode,
+                        )
+                        if config.evaluation.log_data:
+                            save_success_message(config, env_interface, stats_episode)
                     stats_episodes[str(run_id)][episode_id] = stats_episode
+                    status_episodes[str(run_id)][episode_id] = status
+                    append_episode_row(
+                        config.paths.epi_result_file_path,
+                        episode_row(
+                            run_id,
+                            episode_id,
+                            instruction,
+                            stats_episode,
+                            status,
+                            failed_agent,
+                        ),
+                    )
+                else:
+                    try:
+                        info = eval_runner.run_instruction(
+                            output_name=f"episode_{episode_id}_{run_id}"
+                        )
 
-                    cprint("\n---------------------------------", "blue")
-                    cprint(f"Metrics For Run {run_id} Episode {episode_id}:", "blue")
-                    for k, v in stats_episodes[str(run_id)][episode_id].items():
-                        cprint(f"{k}: {v:.3f}", "blue")
-                    cprint("\n---------------------------------", "blue")
-                    # Log results onto a CSV
-                    epi_metrics = stats_episodes[str(run_id)][episode_id] | info_episode
-                    if config.evaluation.log_data:
-                        save_success_message(config, env_interface, stats_episode)
-                    write_to_csv(config.paths.epi_result_file_path, epi_metrics)
-                except Exception as e:
-                    # print exception and trace
-                    traceback.print_exc()
-                    print("An error occurred while running the episode:", e)
-                    print(f"Skipping evaluating episode: {episode_id}")
-                    if config.evaluation.log_data:
-                        save_exception_message(config, env_interface)
+                        info_episode = {
+                            "run_id": run_id,
+                            "episode_id": episode_id,
+                            "instruction": instruction,
+                        }
+                        stats_episode = episode_stats(info)
+                        stats_episodes[str(run_id)][episode_id] = stats_episode
+
+                        print_metrics(
+                            f"Metrics For Run {run_id} Episode {episode_id}",
+                            stats_episode,
+                        )
+                        # Log results onto a CSV
+                        epi_metrics = stats_episode | info_episode
+                        if config.evaluation.log_data:
+                            save_success_message(config, env_interface, stats_episode)
+                        write_to_csv(config.paths.epi_result_file_path, epi_metrics)
+                    except Exception as e:
+                        # print exception and trace
+                        traceback.print_exc()
+                        print("An error occurred while running the episode:", e)
+                        print(f"Skipping evaluating episode: {episode_id}")
+                        if config.evaluation.log_data:
+                            save_exception_message(config, env_interface)
 
                 try:
                     # Reset env_interface (moves onto the next episode in the dataset)
@@ -406,11 +559,11 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
 
             # aggregate metrics across the current run.
             run_metrics = aggregate_measures(stats_episodes[str(run_id)])
-            cprint("\n---------------------------------", "blue")
-            cprint(f"Metrics For Run {run_id}:", "blue")
-            for k, v in run_metrics.items():
-                cprint(f"{k}: {v:.3f}", "blue")
-            cprint("\n---------------------------------", "blue")
+            if count_failures:
+                run_metrics.update(
+                    status_summary(status_episodes[str(run_id)].values())
+                )
+            print_metrics(f"Metrics For Run {run_id}", run_metrics)
 
             # Write aggregated results across run
             write_to_csv(config.paths.run_result_file_path, run_metrics)
@@ -420,13 +573,13 @@ def run_planner(config, dataset: CollaborationDatasetV0 = None, conn=None):
             all_metrics = aggregate_measures(
                 {run_id: aggregate_measures(v) for run_id, v in stats_episodes.items()}
             )
-            cprint("\n---------------------------------", "blue")
-            cprint("Metrics Across All Runs:", "blue")
-            for k, v in all_metrics.items():
-                cprint(f"{k}: {v:.3f}", "blue")
-            cprint("\n---------------------------------", "blue")
+            if count_failures:
+                all_metrics.update(status_summary(all_statuses(status_episodes)))
+            print_metrics("Metrics Across All Runs", all_metrics)
             # Write aggregated results across experiment
             write_to_csv(config.paths.end_result_file_path, all_metrics)
+        elif count_failures:
+            conn.send((stats_episodes, status_episodes))
         else:
             conn.send(stats_episodes)
 
